@@ -3,7 +3,7 @@ from cleaner.cleaner import Cleaner
 import joblib
 import streamlit as st
 
-filename = 'data/joblib_model.sav'
+filename = './data/joblib_model.sav'
 __type_subtype = {"house": ('chalet', 'bungalow', 'town-house', 'villa', 'castle', 'farmhouse', 'mansion', 'mixed-use-building', 'country-cottage', 'manor-house', 'house', 'other-property', 'exceptional-property', 'apartment-block'), 
                     "apartment": ('flat-studio', 'loft', 'service-flat', 'duplex', 'triplex', 'apartment', 'penthouse', 'kot', 'ground-floor')}
 numerical_features = ["bedroomCount", "habitableSurface", "facedeCount", "streetFacadeWidth", "kitchenSurface", "landSurface", 
@@ -30,6 +30,16 @@ categorical_features = [
 
 target_name = "price"
 
+postCodes_df = pd.read_csv("./data/georef-belgium-postal-codes.csv", 
+                           sep=";", 
+                           usecols = ['Post code', 'Région name (French)', 'Province name (French)',
+                                      'Arrondissement name (French)', 'Municipality name (Dutch)',
+                                      'Municipality name (French)', 'Sub-municipality name (French)',
+                                      'Sub-municipality name (Dutch)'], header = 0).rename(
+                                          columns = {'Post code': 'postCode', 'Région name (French)': 'rgn_fr',
+                                                     'Province name (French)': 'prov_fr', 'Arrondissement name (French)' : 'arrond_fr',
+                                                     'Municipality name (French)': 'mun_fr', 'Municipality name (Dutch)': 'mun_nl',
+                                                     'Sub-municipality name (French)': 'sub_mun_fr', 'Sub-municipality name (Dutch)': 'sub_mun_nl'})
 def get_values_from_df(column_name, df) :
     """
     Get the list of unique values in a column of a dataframe.
@@ -38,6 +48,10 @@ def get_values_from_df(column_name, df) :
 
 def main() :
     df = Cleaner.clean_data()
+ 
+    df = df.merge(postCodes_df, how = 'inner', on = 'postCode')
+    df['municipality'] = df['mun_fr'].combine_first(df['mun_nl'])
+    df['sub_municipality'] = df['sub_mun_fr'].combine_first(df['sub_mun_nl'])
         
     st.title("House Price Prediction")
     st.write("This is a simple house price prediction app.")
@@ -51,7 +65,27 @@ def main() :
     subtypes = list(map(lambda x: x.upper().replace('-', '_'), list(__type_subtype[tp.lower()])))
     subtypes.sort()
     subtype = st.selectbox('Subtype', subtypes, index = ind)
-    postCode = st.selectbox('Post code', df.postCode.sort_values().unique())
+    
+    region = st.selectbox('Region', get_values_from_df('rgn_fr', df), index = None)
+    provinces = get_values_from_df('prov_fr', df[df.rgn_fr == region])
+    province = ''
+    if len(provinces) > 0 :
+        province = st.selectbox('Province', provinces, index = None)
+    arrond = st.selectbox('Arrondissement', get_values_from_df('arrond_fr', df[(df.rgn_fr == region) & (len(provinces) == 0 or df.prov_fr == province)]), index = None)
+    municipality = st.selectbox('Municipality', get_values_from_df('municipality', df[(df.rgn_fr == region) & (len(provinces) == 0 or df.prov_fr == province) & (df.arrond_fr == arrond)]), index = None)
+    sub_muns = get_values_from_df('sub_municipality', df[(df.rgn_fr == region) & (len(provinces) == 0 or df.prov_fr == province) & (df.arrond_fr == arrond) & (df.municipality == municipality)])
+    subMunicipality = ''
+    if len(sub_muns) > 1 :
+        subMunicipality = st.selectbox('Sub-municipality', sub_muns, index = None)
+    elif len(sub_muns) == 1 :
+        subMunicipality = sub_muns[0]
+    
+    postCodes = df[(df.rgn_fr == region) & (len(provinces) == 0 or df.prov_fr == province) & (df.arrond_fr == arrond) & (df.municipality == municipality) & (len(sub_muns) == 0 or df.sub_municipality == subMunicipality)]['postCode'].sort_values().unique()
+    if len(postCodes) > 1 :
+        postCode = st.selectbox('Post code', postCodes)
+    elif len(postCodes) == 1 :
+        postCode = postCodes[0]
+
     conditions = get_values_from_df('buildingCondition', df)
     buildingCondition = st.selectbox('Building condition', conditions, index=None)
     for col in filter(lambda x: x.startswith('has'), df[numerical_features + categorical_features].columns.to_list()) :
