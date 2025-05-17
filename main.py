@@ -1,9 +1,11 @@
 import pandas as pd
 from cleaner.cleaner import Cleaner
-import joblib
 import streamlit as st
+import requests
+import json
 
-filename = './data/joblib_model.sav'
+API_ENDPOINT = 'https://ml-fastapi-liao.onrender.com/predict'
+
 __type_subtype = {"house": ('chalet', 'bungalow', 'town-house', 'villa', 'castle', 'farmhouse', 'mansion', 'mixed-use-building', 'country-cottage', 'manor-house', 'house', 'other-property', 'exceptional-property', 'apartment-block'), 
                     "apartment": ('flat-studio', 'loft', 'service-flat', 'duplex', 'triplex', 'apartment', 'penthouse', 'kot', 'ground-floor')}
 numerical_features = ["bedroomCount", "habitableSurface", "facedeCount", "streetFacadeWidth", "kitchenSurface", "landSurface", 
@@ -27,8 +29,6 @@ categorical_features = [
     "terraceOrientation",
     "epcScore"
 ]
-
-target_name = "price"
 
 postCodes_df = pd.read_csv("./data/georef-belgium-postal-codes.csv", 
                            sep=";", 
@@ -109,47 +109,42 @@ def main() :
     gardenSurface = st.number_input('Garden surface', min_value = 0, max_value = 1000, value = 0)
     landSurface = st.number_input('Land surface', min_value = 0, max_value = 10000, value = 0)
 
-    prediction = ['']
+    prediction = ''
     col1, col2, col3 = st.columns(3)
     with col2 :
         if col2.button('Predict') :
-            new_house = pd.DataFrame({
-                'bedroomCount': [bedroomCount],
-                'habitableSurface': [habitableSurface],
-                'facedeCount': [facedeCount],
-                'streetFacadeWidth': [streetFacadeWidth],
-                'kitchenSurface': [kitchenSurface],
-                'landSurface': [landSurface],
-                'terraceSurface': [terraceSurface],
-                'gardenSurface': [gardenSurface],
-                'toiletCount': [toiletCount],
-                'bathroomCount': [bathroomCount],
-                'type': [tp],
-                'subtype': [subtype],
-                'postCode': [postCode],
-                'hasBasement': [1 if st.session_state['hasBasement'] else 0],
-                'buildingCondition': [buildingCondition],
-                'buildingConstructionYear': [buildingConstructionYear],
-                'hasTerrace': [1 if st.session_state['hasTerrace'] else 0],
-                'floodZoneType': [floodZoneType],
-                'heatingType': [heatingType],
-                'kitchenType': [kitchenType],
-                'gardenOrientation': [gardenOrientation],
-                'hasSwimmingPool': [1 if st.session_state['hasSwimmingPool'] else 0],
-                'terraceOrientation': [terraceOrientation],
-                'epcScore': [epcScore]
-                })
-            try :
-                with open(filename, 'rb') as file :
-                    # load model with joblib
-                    model = joblib.load(filename)
-            except FileExistsError :
-                st.error("Model file not found. Please train the model first.")
-                return
+            data = {'bedroomCount': bedroomCount,
+                'habitableSurface': habitableSurface,
+                'facedeCount': facedeCount,
+                'streetFacadeWidth': streetFacadeWidth,
+                'kitchenSurface': kitchenSurface,
+                'landSurface': landSurface,
+                'terraceSurface': terraceSurface,
+                'gardenSurface': gardenSurface,
+                'toiletCount': toiletCount,
+                'bathroomCount': bathroomCount,
+                'type': tp,
+                'subtype': subtype,
+                'postCode': int(postCode),
+                'hasBasement': 1 if st.session_state['hasBasement'] else 0,
+                'buildingCondition': buildingCondition,
+                'buildingConstructionYear': buildingConstructionYear,
+                'hasTerrace': 1 if st.session_state['hasTerrace'] else 0,
+                'floodZoneType': floodZoneType,
+                'heatingType': heatingType,
+                'kitchenType': kitchenType,
+                'gardenOrientation': gardenOrientation,
+                'hasSwimmingPool': 1 if st.session_state['hasSwimmingPool'] else 0,
+                'terraceOrientation': terraceOrientation,
+                'epcScore': epcScore}
             
-            prediction = model.predict(new_house)
+            for key in data.keys() :
+                if data[key] == None :
+                    data[key] = ''
+            
+            prediction = requests.post(url=API_ENDPOINT, json=data).json()
 
-    st.success(prediction[0] if isinstance(prediction[0], str) else "Predicted price is %.2f€" % prediction[0])
+    st.success(prediction if isinstance(prediction, str) or ('price' not in prediction) else "Predicted price is %.2f€" % prediction['price'])
 
 if __name__ == "__main__":
     main()
